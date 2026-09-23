@@ -1,3 +1,14 @@
 {
-  "items": []
+  "items": [
+    {
+      "name": "GitTool.7z.001",
+      "url": "_NIH_ROOT_/tools/GitTool.7z.001",
+      "icon": ""
+    },
+    {
+      "name": "GitTool.7z.002",
+      "url": "_NIH_ROOT_/tools/GitTool.7z.002",
+      "icon": ""
+    }
+  ]
 }

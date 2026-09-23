@@ -149,16 +149,26 @@ async function loadDesktopDir(pathArr) {
 }
 
 /* ---------------- 툴박스 경로 읽기 ----------------
-   pathArr[0]이 TOOLBOX_TREE_NAME인 경로 - 하위 폴더 없이(folders: []) toolboxItems(state.js의
-   applyToolboxConfig가 채워둠) 전체를 파일처럼 평평하게 나열한다. 각 파일 객체에 toolboxNode로
-   원본 항목을 그대로 실어 보내서, dfsNode와 완전히 같은 방식으로 content-pane.js/tree-pane.js/
+   pathArr[0]이 TOOLBOX_TREE_NAME인 경로 - state.js의 toolboxTree(applyToolboxConfig가 이름의
+   백슬래시(\) 구분자를 기준으로 미리 만들어둔 폴더 트리)를 pathArr[1:] 만큼 그대로 따라 내려가서
+   그 위치의 folders/files를 돌려준다. 진짜 저장소 폴더 읽기(loadDir)와 똑같은
+   {folders:[이름,...], files:[{name,size,...},...]} 모양이라, 트리/내용창/방향키 등 나머지
+   로직은 폴더가 몇 단계든 전혀 손대지 않고 그대로 재사용된다. 각 파일 객체에 toolboxNode로 원본
+   항목을 그대로 실어 보내서, dfsNode와 완전히 같은 방식으로 content-pane.js/tree-pane.js/
    context-menu.js/keyboard-and-activate.js가 "진짜 파일이 아니라 툴박스 바로가기"임을 알아채고
-   따로 처리한다(각 파일의 it.dfsNode 검사 옆에 it.toolboxNode 검사를 나란히 추가해둔 곳들 참고). */
+   따로 처리한다(각 파일의 it.dfsNode 검사 옆에 it.toolboxNode 검사를 나란히 추가해둔 곳들 참고).
+   중간에 없는 폴더 이름을 만나면(toolbox_set.json이 바뀌어 그 사이 사라진 경로 등) 오류를 던지는
+   대신 조용히 빈 폴더로 취급한다 - 어차피 사용자가 직접 손으로 관리하는 목록이라, 저장소 폴더처럼
+   "삭제됐거나 이름이 바뀌었을 수 있음" 오류 화면을 보여줄 것까지는 없다. */
 function loadToolboxDir(pathArr) {
   const key = pathArr.join("/");
+  let node = toolboxTree;
+  for (let i = 1; i < pathArr.length && node; i++) {
+    node = node.folders[pathArr[i]] || null;
+  }
   const entry = {
-    folders: [],
-    files: toolboxItems.map(node => ({ name: node.name, size: 0, toolboxNode: node }))
+    folders: node ? Object.keys(node.folders) : [],
+    files: node ? node.files.map(item => ({ name: item.name, size: 0, toolboxNode: item })) : []
   };
   dirCache.set(key, entry);
   return entry;

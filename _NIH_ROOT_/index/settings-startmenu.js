@@ -616,15 +616,34 @@ async function refreshMergedSoundConfig() {
     if (tbIcon) renderSettingsIconInto(tbIcon);
   }
 }
+// 요청: 툴박스 이름에 백슬래시(\)로 폴더 경로를 적을 수 있게 되면서(state.js의 toolboxTree),
+// 툴박스 안에도 저장소 폴더처럼 여러 단계 하위 폴더가 생길 수 있다 - 새로 반영할 때 dirCache에
+// "툴박스" 루트 한 칸만 다시 채우면, 지금 그 하위 폴더를 보고 있거나(currentPath) 트리에서
+// 펼쳐둔(expanded) 하위 폴더들은 예전 내용이 캐시에 그대로 남아있게(혹은 부팅 시점의 경합으로
+// toolboxTree가 아직 비어있을 때 미리 캐시된 빈 폴더가 그대로 남게) 된다. dfsBroadcastChange
+// (desktop-fs.js)와 같은 방식으로 "툴박스" 전체 접두사의 캐시를 지우고, 지금 보고 있는 경로 +
+// 트리에서 펼쳐둔 툴박스 하위 경로들을 다시 읽어(revealPath) 채운다.
+async function applyToolboxConfigAndRefresh(cfg) {
+  applyToolboxConfig(cfg);
+  for (const k of [...dirCache.keys()]) {
+    if (k === TOOLBOX_TREE_NAME || k.indexOf(TOOLBOX_TREE_NAME + "/") === 0) dirCache.delete(k);
+  }
+  const toReveal = new Set([TOOLBOX_TREE_NAME]);
+  if (isToolboxPath(currentPath)) toReveal.add(currentPath.join("/"));
+  if (typeof expanded !== "undefined" && expanded) {
+    expanded.forEach(k => { if (k === TOOLBOX_TREE_NAME || k.indexOf(TOOLBOX_TREE_NAME + "/") === 0) toReveal.add(k); });
+  }
+  await Promise.all([...toReveal].map(k => revealPath(k.split("/").filter(Boolean)).catch(() => {})));
+}
 // 툴박스(toolbox_set.json)는 아이콘/사운드와 달리 스킨별 파일이 없는 단순한 목록이라, 병합 없이
-// 다시 읽어 반영하기만 하면 된다 - 부팅 시(bootstrap.js) + 툴박스 메이커에서 편집할 때
-// (menu-maker.js의 persistLocalOverride) + 다른 탭에서 바뀌었을 때(위 storage 리스너) 모두 이
-// 함수 하나로 처리한다. 지금 탐색기가 "툴박스" 폴더를 보고 있으면 내용창도 즉시 다시 그려서
-// 새로고침 없이 반영되게 한다.
+// 다시 읽어 반영하기만 하면 된다 - 부팅 시(bootstrap.js는 이미 읽어온 cfg.toolbox로 위
+// applyToolboxConfigAndRefresh를 직접 부른다) + 툴박스 메이커에서 편집할 때(menu-maker.js의
+// persistLocalOverride) + 다른 탭에서 바뀌었을 때(위 storage 리스너) 이 함수 하나로 처리한다.
+// 지금 탐색기가 "툴박스" 폴더(하위 폴더 포함)를 보고 있으면 내용창도 즉시 다시 그려서 새로고침
+// 없이 반영되게 한다.
 async function refreshToolboxConfig() {
   const cfg = await loadToolboxSetConfig();
-  applyToolboxConfig(cfg);
-  await loadDir([TOOLBOX_TREE_NAME]); // dirCache 갱신(트리가 동기적으로 읽으므로 renderNavPane 전에 채워둬야 함)
+  await applyToolboxConfigAndRefresh(cfg);
   renderNavPane();
   if (els.win && !els.win.classList.contains("closed") && isToolboxPath(currentPath)) renderContentPane();
 }

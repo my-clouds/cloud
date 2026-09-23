@@ -190,6 +190,34 @@ function applyCustomIconConfig(icons) {
 // 비어 있으면 url의 마지막 조각(파일명처럼 보이는 부분)으로 대신 채워, 항목이 "이름 없음"으로
 // 뜨는 일이 없게 한다.
 let toolboxItems = [];
+// 요청: "이름에 1\2\3\GitTool.7z.001 처럼 적으면 마지막 조각이 파일 이름이 되고 나머지 앞은
+// 폴더가 되게" - 이름에 백슬래시(\)가 있으면 그 앞부분들을 툴박스 안의 하위 폴더 경로로, 맨
+// 마지막 조각만 실제로 보이는 파일 이름으로 쓴다(실제 윈도우 경로 표기와 같은 방식 - 이
+// 앱에서 저장소 경로를 사람이 읽는 문구로 보여줄 때도 항상 백슬래시를 쓴다, showRepoFileProperties
+// 등 참고). 폴더 트리 자체(toolboxTree)는 toolboxItems를 기반으로 매번 다시 계산해서 만든다 -
+// 저장된 순서를 그대로 유지해야(메뉴 메이커의 ▲/▼로 손으로 정렬한 순서가 곧 표시 순서) 하므로
+// 알파벳 정렬은 하지 않는다(plain object의 문자열 키는 삽입 순서를 그대로 유지한다).
+let toolboxTree = { folders: {}, files: [] };
+function toolboxSplitNamePath(rawName) {
+  const parts = String(rawName || "").split("\\").map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return { dirs: [], baseName: "새 항목" };
+  return { dirs: parts.slice(0, -1), baseName: parts[parts.length - 1] };
+}
+function buildToolboxTree(items) {
+  const root = { folders: {}, files: [] };
+  items.forEach(item => {
+    const { dirs, baseName } = toolboxSplitNamePath(item.name);
+    let cur = root;
+    dirs.forEach(dirName => {
+      if (!cur.folders[dirName]) cur.folders[dirName] = { folders: {}, files: [] };
+      cur = cur.folders[dirName];
+    });
+    // toolboxNode로 실어 보내는 값은 baseName(맨 마지막 조각)을 화면에 보일 이름으로 쓰고,
+    // fullName에 원래 적은 전체 경로 문자열을 남겨(속성 창 등에서 참고용으로만 쓸 수 있게) 둔다.
+    cur.files.push(Object.assign({}, item, { name: baseName, fullName: item.name }));
+  });
+  return root;
+}
 function applyToolboxConfig(data) {
   const raw = (data && Array.isArray(data.items)) ? data.items : [];
   toolboxItems = raw
@@ -207,6 +235,7 @@ function applyToolboxConfig(data) {
         height: Number(it.height) || 640
       };
     });
+  toolboxTree = buildToolboxTree(toolboxItems);
 }
 // 이식성 수정: icon_set.json/menu_set.json 안의 아이콘 경로가 예전엔 "/File-Garage/_NIH_ROOT_/..."
 // 처럼 레포 이름을 그대로 박아넣은 절대경로였다 - 레포 이름이 바뀌거나(포크/이름변경) 다른 곳에

@@ -941,6 +941,12 @@ function dfInitMenuMakerWindow(handle, initialData, state, initialTab) {
       note.textContent = "이 항목은 하위 메뉴가 있어 클릭하면 주소로 이동하는 대신 하위 메뉴가 펼쳐집니다(이름/아이콘만 사용됨).";
       panelEl.appendChild(note);
     }
+    if (currentTab === "toolbox") {
+      var tbNote = document.createElement("div");
+      tbNote.className = "mm-submenu-note";
+      tbNote.textContent = "이름에 백슬래시(\\)를 넣으면 그 앞부분들이 툴박스 안의 폴더가 되고, 맨 마지막 조각만 실제로 보이는 이름이 됩니다 - 예: 1\\2\\3\\GitTool.7z.001";
+      panelEl.appendChild(tbNote);
+    }
 
     function field(labelText, inputEl) { return fieldInto(panelEl, labelText, inputEl); }
 
@@ -1096,7 +1102,7 @@ function dfInitMenuMakerWindow(handle, initialData, state, initialTab) {
   function renderToolboxTabLists() {
     listsBodyEl.innerHTML =
       '<div class="mm-section-head"><h3>툴박스</h3></div>' +
-      '<div class="mm-section-sub">탐색기의 "툴박스" 위치에 보여줄 외부 링크 목록입니다. 이름은 화면에 보이는 파일명처럼 짓고(예: MyTool.exe), 주소(URL)는 절대/상대 구분 없이 아무 사이트나 넣을 수 있습니다 - 실제로는 그 주소로 가는 바로가기일 뿐, 이 저장소에 그 파일이 있는 건 아닙니다.</div>' +
+      '<div class="mm-section-sub">탐색기의 "툴박스" 위치에 보여줄 외부 링크 목록입니다. 이름은 화면에 보이는 파일명처럼 짓고(예: MyTool.exe), 주소(URL)는 절대/상대 구분 없이 아무 사이트나 넣을 수 있습니다 - 실제로는 그 주소로 가는 바로가기일 뿐, 이 저장소에 그 파일이 있는 건 아닙니다. 이름에 백슬래시(\\)를 넣으면 폴더처럼 나뉩니다 - 예: 1\\2\\3\\GitTool.7z.001 이라고 적으면 툴박스 안에 1\\2\\3 폴더가 생기고 그 안에 GitTool.7z.001 항목이 들어갑니다(맨 마지막 조각만 실제 이름).</div>' +
       '<div class="mm-list" id="mmToolboxList"></div>' +
       '<button class="mm-add-row" id="mmAddToolbox">+ 새 항목 추가</button>';
     document.getElementById("mmAddToolbox").onclick = function() {

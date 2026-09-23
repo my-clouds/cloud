@@ -181,10 +181,15 @@ function dfCopyToolboxUrl(url) {
 }
 async function showToolboxItemProperties(it) {
   const node = it.toolboxNode || {};
+  // 이름에 백슬래시로 폴더를 적었으면(state.js의 toolboxTree) it.path가 그 하위 폴더까지 포함한
+  // 전체 경로이므로, 실제 저장소 파일 속성(showRepoFileProperties)과 같은 방식으로 "위치"를
+  // 보여준다 - 안 적었으면 그냥 툴박스 바로 아래다.
+  const location = it.path && it.path.length > 1 ? it.path.slice(0, -1).join("\\") : TOOLBOX_TREE_NAME;
   const lines = [
     `${displayName(it.name)} 속성`,
     "",
     "종류: 툴박스 항목(외부 링크)",
+    `위치: ${location}`,
     `주소: ${node.url || ""}`
   ];
   await showInfoDialog(lines.join("\n"));
@@ -200,6 +205,14 @@ function buildToolboxItemMenuItems(it) {
     { label: "속성", action: () => showToolboxItemProperties(it) }
   ];
 }
+// 이름에 백슬래시로 만든 툴박스 안의 하위 "폴더" - 실제 저장소/바탕화면 폴더처럼 CRUD 메뉴를
+// 제공할 대상(dexie 노드나 실제 경로)이 없으므로 최소한(열기 + 바로 툴박스 메이커로)만 둔다.
+function buildToolboxFolderMenuItems(it) {
+  return [
+    { label: "열기", action: () => navigate(it.path) },
+    { label: "툴박스 메이커 열기", action: () => dfsOpenMenuMakerInWindow({ initialTab: "toolbox" }) }
+  ];
+}
 function buildFileMenuItems(it) {
   // 요청 #113: 휴지통 안의 항목(파일/폴더 모두)은 CRUD 메뉴 대신 복원/영구 삭제 두 개만 제공한다
   // (실제 윈도우 휴지통과 동일 - 이름 변경/새 폴더/복사 등은 휴지통 안에서는 의미가 없음).
@@ -208,6 +221,12 @@ function buildFileMenuItems(it) {
   // 주소로 가는 바로가기일 뿐) - dfsNode 검사(바로 아래)와 나란히 가장 먼저 갈라낸다.
   if (it.toolboxNode) return buildToolboxItemMenuItems(it);
   if (it.type === "folder") {
+    // 요청: 이름에 백슬래시(\)를 적어 만든 툴박스 안의 하위 "폴더"는 실제 저장소 폴더가 아니라
+    // toolbox_set.json의 항목 이름에서 그때그때 계산해낸 묶음일 뿐이다(state.js의 toolboxTree) -
+    // 다운로드/저장소에서 보기/바탕화면에 바로가기 만들기 같은 아래의 실제 저장소 폴더 메뉴를
+    // 그대로 적용하면(예: absoluteFileUrl로 존재하지도 않는 경로를 다운로드 시도) 의미가 없으므로
+    // 따로 최소한의 메뉴만 제공한다.
+    if (isToolboxPath(it.path)) return buildToolboxFolderMenuItems(it);
     // 바탕화면(가상 파일시스템) 안의 폴더는 실제 저장소 폴더와 달리 쓰기가 가능하므로, 진짜
     // 탐색기와 하나로 통합된 지금은 여기서도 새 폴더/이름변경/삭제 등 CRUD 메뉴를 그대로 제공한다.
     if (isDesktopPath(it.path)) return dfsDesktopFolderMenuItems(it);
