@@ -65,12 +65,18 @@ function dfsBuildCtxMenuEl(items, parentMenu, parentRow) {
     row.className = "ctx-item";
     row.textContent = it.items ? it.label + "  ▸" : it.label;
     if (it.items) {
-      row.onmouseenter = () => {
+      const openThisSubmenu = () => {
         if (activeCtxSubmenu && activeCtxSubmenu._forRow === row) return;
         closeCtxSubmenu();
         ctxOpenSubmenuForRow(row, it, menu);
       };
-      row.onclick = (e) => { e.stopPropagation(); }; // 하위 메뉴가 있는 항목 자체는 열기만 하고 닫지 않는다
+      row.onmouseenter = openThisSubmenu;
+      // 안드로이드/폴드8 대응: 터치에는 마우스오버(hover) 상태 자체가 없어서, 하위 메뉴가 있는
+      // 항목을 탭해도(=click만 발생) 예전엔 아무 일도 안 일어났다(그냥 stopPropagation만 함) -
+      // 하위 메뉴가 아예 안 열려서 터치로는 그 메뉴들을 쓸 수 없었다. 탭(click)에서도 마우스오버와
+      // 똑같이 하위 메뉴를 열게 한다(데스크톱 마우스 클릭에도 해가 없다 - 이미 열려 있으면
+      // openThisSubmenu가 조용히 무시함).
+      row.onclick = (e) => { e.stopPropagation(); openThisSubmenu(); }; // 하위 메뉴가 있는 항목 자체는 열기만 하고 닫지 않는다
     } else {
       // 요청 #166: dfsBuildCtxMenuEl은 하위 메뉴의 항목들도 자기 자신을 재귀 호출해서 만들기
       // 때문에, 여기 있는 leaf 항목이 "지금 열려 있는 하위 메뉴 자기 자신 안"의 항목일 수도 있다
