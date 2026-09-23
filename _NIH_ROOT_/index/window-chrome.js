@@ -18,14 +18,24 @@ els.btnMin.onclick = () => { els.win.classList.add("minimized"); dfsPlaySound("w
 // 드래그로 옮긴 위치(position:fixed의 left/top 인라인 스타일)는 최대화하면 잠깐 지워야
 // (.maximized 클래스의 top:0/left:0을 인라인 스타일이 덮어써버리면 꽉 채워지지 않음) 온전히 꽉 찬다.
 // 최대화를 풀면 그 위치를 되돌려서 이어서 옮긴 자리에 복귀한다(실제 창처럼).
-let lastDragPos = null; // { left, top } - 최대화 직전에 드래그로 옮겨져 있었으면 그 좌표를 기억
+let lastDragPos = null; // { left, top, width, height } - 최대화 직전에 옮기거나 리사이즈했었으면 그 좌표/크기를 기억
 function toggleMaximize() {
   const willMaximize = !els.win.classList.contains("maximized");
   if (willMaximize) {
     if (els.win.classList.contains("positioned")) {
-      lastDragPos = { left: els.win.style.left, top: els.win.style.top };
+      lastDragPos = {
+        left: els.win.style.left, top: els.win.style.top,
+        width: els.win.style.width, height: els.win.style.height,
+      };
       els.win.style.left = "";
       els.win.style.top = "";
+      // 안드로이드/폴드8 대응으로 드래그·리사이즈를 시작하는 순간 반응형 캡(.window.positioned가
+      // max-width:100%/max-height:85vh를 없애면서 원래 크기로 튀는 것)을 막으려고 그때 폭/높이를
+      // 인라인 스타일로 고정해두는데(아래 setupWindowDrag/setupWindowResize), 그 인라인 값이
+      // .maximized의 width:auto/height:auto보다 우선순위가 높아서 최대화해도 옛 크기가 그대로
+      // 남아 오른쪽/아래에 여백이 생겼다 - 최대화할 때는 이것도 같이 지워야 온전히 꽉 찬다.
+      els.win.style.width = "";
+      els.win.style.height = "";
     }
     els.win.classList.add("maximized");
   } else {
@@ -33,6 +43,8 @@ function toggleMaximize() {
     if (lastDragPos) {
       els.win.style.left = lastDragPos.left;
       els.win.style.top = lastDragPos.top;
+      els.win.style.width = lastDragPos.width;
+      els.win.style.height = lastDragPos.height;
       lastDragPos = null;
     }
   }

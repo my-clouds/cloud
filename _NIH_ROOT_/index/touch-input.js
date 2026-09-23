@@ -10,11 +10,9 @@
    요구한 대응:
      - 손가락 하나로 한 번 톡 누르면 좌클릭(탭 = 클릭)
      - 누른 채로 움직이면 드래그(좌클릭을 누른 채 움직이는 것과 같다 - 창 드래그도 이걸로 된다)
-     - 더블 탭(빠르게 두 번 톡톡) 또는 두 손가락 탭 = 우클릭(컨텍스트 메뉴)
-       -> 더블 탭은 "누른 채 유지"가 이제 우클릭 메뉴를 여는 뜻이 되므로, 파일/폴더를 두 번 눌러
-          여는 옛 데스크톱식 더블클릭은 터치에서는 쓸 수 없다 - 대신 이 앱의 모든 컨텍스트 메뉴는
-          이미 맨 위에 "열기" 항목을 갖고 있으므로(그리드/트리/바탕화면 아이콘 전부), 터치에서는
-          "한 번 탭해서 선택 -> 더블 탭(또는 두 손가락 탭)으로 메뉴 -> 열기"로 열면 된다.
+     - 손가락 하나로 빠르게 두 번 톡톡(더블 탭) = 더블 클릭 그대로(파일/폴더 더블클릭 실행, 타이틀바
+       더블클릭 최대화 등 기존 dblclick 동작 전부 그대로 탄다)
+     - 두 손가락으로 동시에 탭 = 우클릭(컨텍스트 메뉴)
 
    입력창(input/textarea/[contenteditable])·비디오·오디오·iframe 위에서는 이 번역을 하지 않고
    완전히 네이티브 터치 동작(커서 위치 지정, 텍스트 선택, 재생 컨트롤 등)에 맡긴다.
@@ -93,17 +91,6 @@
     moved = false;
     downTarget = document.elementFromPoint(downX, downY) || target;
 
-    const now = Date.now();
-    const isDoubleTap = (now - lastTapTime) < DOUBLE_TAP_MS &&
-      Math.hypot(downX - lastTapX, downY - lastTapY) < DOUBLE_TAP_PX;
-    if (isDoubleTap) {
-      e.preventDefault(); // 브라우저 기본 더블탭 확대 제스처도 같이 막는다
-      dispatchMouse("contextmenu", downX, downY, downTarget, 2, 2);
-      lastTapTime = 0; // 연속 3번째 탭이 또 더블탭으로 이어지지 않도록 초기화
-      gestureConsumed = true;
-      return;
-    }
-
     singleActive = true;
     const md = dispatchMouse("mousedown", downX, downY, downTarget, 0, 1);
     // 앱이 이 mousedown으로 직접 드래그를 시작하는 경우에만(타이틀바 이동, 리사이즈 손잡이, 아이콘/
@@ -143,9 +130,21 @@
     dispatchMouse("mouseup", lastX, lastY, downTarget);
     if (!moved) {
       dispatchMouse("click", lastX, lastY, downTarget);
-      lastTapTime = Date.now();
-      lastTapX = downX;
-      lastTapY = downY;
+      const now = Date.now();
+      const isDoubleTap = (now - lastTapTime) < DOUBLE_TAP_MS &&
+        Math.hypot(downX - lastTapX, downY - lastTapY) < DOUBLE_TAP_PX;
+      if (isDoubleTap) {
+        // 실제 더블클릭과 같은 순서(click, click, 그 다음 dblclick) - 우리가 click을 직접 합성해서
+        // 보내므로 브라우저가 dblclick까지 저절로 만들어주지는 않는다(합성 이벤트라 신뢰되지 않음),
+        // 여기서 같이 쏴준다. 파일/폴더 더블클릭 실행, 타이틀바 더블클릭 최대화 등 기존 dblclick
+        // 핸들러가 그대로 이걸 받는다.
+        dispatchMouse("dblclick", lastX, lastY, downTarget, 0, 1);
+        lastTapTime = 0; // 연속 3번째 탭이 또 더블탭으로 묶이지 않도록 초기화
+      } else {
+        lastTapTime = now;
+        lastTapX = downX;
+        lastTapY = downY;
+      }
     } else {
       lastTapTime = 0; // 드래그였으면 다음 탭과 묶어 더블탭으로 판정하지 않는다
     }
@@ -164,11 +163,11 @@
     window.addEventListener("touchend", onTouchEnd, { passive: false });
     window.addEventListener("touchcancel", onTouchCancel, { passive: false });
 
-    // 터치 손잡이(타이틀바/리사이즈 모서리/아이콘 등)에서는 브라우저가 자기 나름의 스크롤/확대
-    // 제스처를 미리 채가지 않도록 touch-action을 꺼두고, 롱프레스 시 안드로이드/iOS 기본 말풍선
-    // (텍스트 선택/이미지 저장 메뉴 등)도 꺼서 우리가 만든 더블탭 컨텍스트 메뉴와 겹치지 않게 한다.
-    // 내용을 스크롤해야 하는 영역(content-pane/nav-pane/트리/시작 메뉴 목록 등)은 일부러 빼서 손가락
-    // 스크롤이 계속 자연스럽게 되게 둔다.
+    // 터치 손잡이(타이틀바/리사이즈 모서리/아이콘 등)에서는 브라우저가 자기 나름의 스크롤/더블탭
+    // 확대 제스처를 미리 채가지 않도록 touch-action을 꺼두고, 롱프레스 시 안드로이드/iOS 기본
+    // 말풍선(텍스트 선택/이미지 저장 메뉴 등)도 꺼서 우리가 만든 더블클릭/우클릭 번역과 겹치지
+    // 않게 한다. 내용을 스크롤해야 하는 영역(content-pane/nav-pane/트리/시작 메뉴 목록 등)은
+    // 일부러 빼서 손가락 스크롤이 계속 자연스럽게 되게 둔다.
     const css =
       '.titlebar, .rz, .df-icon, .taskbar-app, .start-btn, .tray-icon, .tool-btn, .tb-btn, .tb-controls { touch-action: none; }\n' +
       '.df-icon, .titlebar, .taskbar, .start-menu, .tb-btn, .tool-btn, .context-menu { -webkit-touch-callout: none; -webkit-user-drag: none; }';
