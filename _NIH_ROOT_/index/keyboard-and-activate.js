@@ -281,6 +281,10 @@ async function activate(it) {
   // 바탕화면(가상 파일시스템) 파일/바로가기는 진짜 저장소 파일이 아니므로 dfs 전용 활성화
   // 로직(에디터 새 탭으로 열기 / 바로가기 따라가기)을 그대로 재사용한다.
   if (it.dfsNode) { dfsActivate(it.dfsNode); return; }
+  // 툴박스 항목도 이 저장소의 실제 파일이 아니라 toolbox_set.json에 적힌 외부 주소로 가는
+  // 바로가기다 - menu_set.json의 시작메뉴/트레이 항목과 완전히 같은 활성화 규칙(popup/width/
+  // height까지 존중)을 쓰기 위해 settings-startmenu.js의 activateExternalItem을 그대로 재사용한다.
+  if (it.toolboxNode) { activateExternalItem(it.toolboxNode); return; }
   const { path, type } = it;
   // 검색 결과 화면(currentOpts.flat)에서 점프해 들어가는 경우도 포함해서, navigate()가 실시간으로
   // 트리를 그 경로까지 펼쳐서 드러낸다(reveal).

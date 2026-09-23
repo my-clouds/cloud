@@ -220,8 +220,13 @@ function dfsBuildSettingsBodyHtml() {
         <span class="settings-label">로컬 헬퍼(웹훅)</span>
         <button class="settings-button settings-button-neutral" id="setDownloadHelperBtn">웹훅 받기</button>
         <button class="settings-button" id="setKillHelperBtn">웹훅 종료</button>
-        <button class="settings-button settings-button-neutral" id="setDownloadGitToolBtn">GitTool.7z 받기</button>
-        <div class="settings-hint">"웹훅 받기"는 저장소의 localserver.ahk를 바로 내려받습니다(받은 뒤 실행하세요). "웹훅 종료"는 실행 중인 로컬 헬퍼를 끕니다 - 트레이 아이콘이 없어서 마우스로는 끌 수 없으므로 끄려면 이 버튼을 사용하세요. (8000~8020 전체 포트에 종료 요청을 보냅니다) "GitTool.7z 받기"는 저장소의 Git 올인원 툴을 GitTool.7z라는 이름으로 바로 내려받습니다(받은 뒤 실행하세요).</div>
+        <div class="settings-hint">"웹훅 받기"는 저장소의 localserver.ahk를 바로 내려받습니다(받은 뒤 실행하세요). "웹훅 종료"는 실행 중인 로컬 헬퍼를 끕니다 - 트레이 아이콘이 없어서 마우스로는 끌 수 없으므로 끄려면 이 버튼을 사용하세요. (8000~8020 전체 포트에 종료 요청을 보냅니다) 그 밖의 외부 도구/파일 다운로드는 아래 "툴박스"에서 관리합니다.</div>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-row">
+        <span class="settings-label">툴박스</span>
+        <button class="settings-button settings-button-neutral" id="setToolboxMakerBtn">툴박스 메이커 열기</button>
+        <div class="settings-hint">탐색기의 "툴박스" 위치에 보여줄 외부 링크(exe/zip 등 어떤 주소든) 목록을 GUI로 편집합니다(toolbox_set.json). 이름/주소(URL)/아이콘을 지정하면, 탐색기 안에서는 실제로 존재하는 파일처럼 나타나고 열면 그 주소로 이동합니다 - 절대/상대 경로 구분 없이 아무 사이트의 주소나 넣을 수 있습니다. 저장은 다른 저장/다운로드 버튼과 같은 방식이며, 받은 파일을 저장소의 _NIH_ROOT_/index/toolbox_set.json 위치에 덮어써야 실제로 반영됩니다.</div>
       </div>
     </div>
   `;
@@ -392,7 +397,7 @@ function dfInitSettingsWindow(handle) {
     }
   };
   $("setDownloadHelperBtn").onclick = () => downloadRealFileDirect(LOCALSERVER_TOOL_PATH, "localserver.ahk");
-  if ($("setDownloadGitToolBtn")) $("setDownloadGitToolBtn").onclick = () => downloadRealFileDirect(GITTOOL_TOOL_PATH, "GitTool.7z");
+  if ($("setToolboxMakerBtn")) $("setToolboxMakerBtn").onclick = () => dfsOpenMenuMakerInWindow({ initialTab: "toolbox" });
   // 요청 #136: 환경설정도 이제 앱 내 창이라 메뉴 메이커와 같은 z-index 공간을 쓰므로(둘 다
   // dfCreateAppWindow), 예전 #135 시절 필요했던 "메뉴 메이커를 열기 전에 환경설정 오버레이부터
   // 닫기"는 더 이상 필요 없다 - 두 창이 동시에 떠 있어도 각자 독립적으로 옮기고 포커스할 수 있다.
@@ -466,6 +471,10 @@ const ICON_SET_JSON_PATH = "_NIH_ROOT_/index/icon_set.json";
 const SOUND_SET_JSON_PATH = "_NIH_ROOT_/index/sound_set.json";
 // 요청 #143: 메뉴 메이커 4번째 탭("확장자")이 다루는 파일 - { "확장자(점 없음,소문자)": "이니셜" }.
 const EXTENSION_RUN_SET_JSON_PATH = "_NIH_ROOT_/index/extension_run_set.json";
+// 요청: GitTool.7z처럼 언제든 쪼개지거나 늘어날 수 있는 외부/대용량 파일용 하드코딩 다운로드
+// 버튼 대신, 툴박스(메뉴 메이커의 "툴박스" 탭)로 이런 항목들을 자유롭게 관리한다 - 모양은
+// { "items": [ { "name": "...", "url": "...", "icon": "...", "popup": false }, ... ] }.
+const TOOLBOX_SET_JSON_PATH = "_NIH_ROOT_/index/toolbox_set.json";
 async function fetchJsonQuiet(path) {
   try {
     const res = await fetch(path, { cache: "no-store" });
@@ -500,6 +509,12 @@ async function loadExtensionRunSetConfig() {
   const local = dfReadLocalOverride(dfLsExtRunKey());
   if (local) return local;
   const data = await fetchJsonQuiet(EXTENSION_RUN_SET_JSON_PATH);
+  return data || {};
+}
+async function loadToolboxSetConfig() {
+  const local = dfReadLocalOverride(dfLsToolboxKey());
+  if (local) return local;
+  const data = await fetchJsonQuiet(TOOLBOX_SET_JSON_PATH);
   return data || {};
 }
 // 요청 #121: 스킨 폴더(_NIH_ROOT_/index/ui/theme/<스킨>/) 안에도 icon_set.json이 있을 수 있다
@@ -567,10 +582,10 @@ function mergeIconSetConfigs(base, skin, skinPriority) {
 // icon_set.json도 미리 같이 읽어와 skinIcons/skinName으로 함께 건네준다(dfsOpenMenuMakerInWindow가
 // 창을 만들기 전에 한 번 호출해서 초기 데이터로 넘겨준다).
 async function loadAllMenuMakerConfigs() {
-  const [menu, icons, sounds, skinIcons, skinSounds, extRun] = await Promise.all([
-    loadMenuSetConfig(), loadIconSetConfig(), loadSoundSetConfig(), loadSkinIconSetConfig(settings.theme), loadSkinSoundSetConfig(settings.theme), loadExtensionRunSetConfig()
+  const [menu, icons, sounds, skinIcons, skinSounds, extRun, toolbox] = await Promise.all([
+    loadMenuSetConfig(), loadIconSetConfig(), loadSoundSetConfig(), loadSkinIconSetConfig(settings.theme), loadSkinSoundSetConfig(settings.theme), loadExtensionRunSetConfig(), loadToolboxSetConfig()
   ]);
-  return { menu: menu || { start: [], tray: [] }, icons: icons || {}, sounds: sounds || {}, skinIcons: skinIcons || {}, skinSounds: skinSounds || {}, skinName: settings.theme, extRun: extRun || {} };
+  return { menu: menu || { start: [], tray: [] }, icons: icons || {}, sounds: sounds || {}, skinIcons: skinIcons || {}, skinSounds: skinSounds || {}, skinName: settings.theme, extRun: extRun || {}, toolbox: toolbox || { items: [] } };
 }
 // 부팅 시 + 스킨/스킨아이콘우선 설정이 바뀔 때마다 다시 불러서 화면에 반영한다(applyCustomIconConfig
 // 이후 화면들을 다시 그려야 실제로 아이콘이 바뀐 게 보인다).
@@ -600,6 +615,18 @@ async function refreshMergedSoundConfig() {
     const tbIcon = dfSettingsWinHandle.el.querySelector(".tb-icon");
     if (tbIcon) renderSettingsIconInto(tbIcon);
   }
+}
+// 툴박스(toolbox_set.json)는 아이콘/사운드와 달리 스킨별 파일이 없는 단순한 목록이라, 병합 없이
+// 다시 읽어 반영하기만 하면 된다 - 부팅 시(bootstrap.js) + 툴박스 메이커에서 편집할 때
+// (menu-maker.js의 persistLocalOverride) + 다른 탭에서 바뀌었을 때(위 storage 리스너) 모두 이
+// 함수 하나로 처리한다. 지금 탐색기가 "툴박스" 폴더를 보고 있으면 내용창도 즉시 다시 그려서
+// 새로고침 없이 반영되게 한다.
+async function refreshToolboxConfig() {
+  const cfg = await loadToolboxSetConfig();
+  applyToolboxConfig(cfg);
+  await loadDir([TOOLBOX_TREE_NAME]); // dirCache 갱신(트리가 동기적으로 읽으므로 renderNavPane 전에 채워둬야 함)
+  renderNavPane();
+  if (els.win && !els.win.classList.contains("closed") && isToolboxPath(currentPath)) renderContentPane();
 }
 // 요청 #123: 메뉴 메이커가 localStorage의 "로컬 반영" 키를 바꾸면, 이 메인 페이지가 이미 열려
 // 있어도 새로고침 없이 바로 다시 그린다. 요청 #135로 메뉴 메이커가 이 문서 자신 안의 앱 내
@@ -632,6 +659,8 @@ window.addEventListener("storage", (e) => {
     dfDebouncedLsRefresh("sound", refreshMergedSoundConfig);
   } else if (e.key === dfLsExtRunKey()) {
     dfDebouncedLsRefresh("extRun", () => loadExtensionRunSetConfig().then(applyExtensionRunSetConfig));
+  } else if (e.key === dfLsToolboxKey()) {
+    dfDebouncedLsRefresh("toolbox", refreshToolboxConfig);
   }
 });
 function makeAppIcon(item, className) {

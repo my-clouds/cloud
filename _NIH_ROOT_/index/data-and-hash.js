@@ -15,6 +15,10 @@ async function loadDir(pathArr) {
   // 점은 동일하기 때문). dirCache에도 똑같이 채워 넣어서 동기적으로 읽는 트리 그리기 함수들이
   // 그대로 동작하게 한다.
   if (isDfsPath(pathArr)) return loadDesktopDir(pathArr);
+  // 툴박스(toolbox_set.json + 로컬 반영)는 저장소도 dexie도 아니라 메모리에 이미 올라와 있는
+  // toolboxItems(state.js)를 그대로 목록으로 돌려준다 - 네트워크/await가 필요 없지만, dirCache에도
+  // 똑같이 채워 넣어야 트리를 동기적으로 그리는 buildTreeDom 등이 그대로 동작한다(아래 참고).
+  if (isToolboxPath(pathArr)) return loadToolboxDir(pathArr);
   const key = pathArr.join("/");
   if (dirCache.has(key)) return dirCache.get(key);
 
@@ -140,6 +144,22 @@ async function loadDesktopDir(pathArr) {
     dfsNode: k
   }));
   const entry = { folders, files, folderNodes, dfsFolderId: folderId };
+  dirCache.set(key, entry);
+  return entry;
+}
+
+/* ---------------- 툴박스 경로 읽기 ----------------
+   pathArr[0]이 TOOLBOX_TREE_NAME인 경로 - 하위 폴더 없이(folders: []) toolboxItems(state.js의
+   applyToolboxConfig가 채워둠) 전체를 파일처럼 평평하게 나열한다. 각 파일 객체에 toolboxNode로
+   원본 항목을 그대로 실어 보내서, dfsNode와 완전히 같은 방식으로 content-pane.js/tree-pane.js/
+   context-menu.js/keyboard-and-activate.js가 "진짜 파일이 아니라 툴박스 바로가기"임을 알아채고
+   따로 처리한다(각 파일의 it.dfsNode 검사 옆에 it.toolboxNode 검사를 나란히 추가해둔 곳들 참고). */
+function loadToolboxDir(pathArr) {
+  const key = pathArr.join("/");
+  const entry = {
+    folders: [],
+    files: toolboxItems.map(node => ({ name: node.name, size: 0, toolboxNode: node }))
+  };
   dirCache.set(key, entry);
   return entry;
 }

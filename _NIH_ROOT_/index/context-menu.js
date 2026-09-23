@@ -163,10 +163,50 @@ document.addEventListener("keydown", (e) => {
     it.action();
   }
 }, true);
+// 요청: 툴박스 항목(toolbox_set.json)의 우클릭 메뉴 - 이 저장소의 실제 파일이 아니라 외부
+// 주소로 가는 바로가기일 뿐이므로, 저장소 파일용 메뉴(에디터로 열기/저장소에서 보기 등)를 그대로
+// 쓰지 않고 그 목적에 맞는 항목만 따로 구성한다. 열기/새 탭에서 열기는 settings-startmenu.js의
+// activateExternalItem을 그대로 재사용해서(menu_set.json의 시작메뉴/트레이 항목과 완전히 같은
+// 활성화 규칙 - popup/width/height까지 그대로 존중) 서로 동작이 어긋나지 않게 한다.
+function dfCopyToolboxUrl(url) {
+  if (!url) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => showToast("주소를 복사했습니다.", { kind: "info" }),
+      () => showToast("주소 복사에 실패했습니다.", { kind: "warn", sound: "error_generic" })
+    );
+  } else {
+    showToast("이 브라우저에서는 주소 복사를 지원하지 않습니다.", { kind: "warn" });
+  }
+}
+async function showToolboxItemProperties(it) {
+  const node = it.toolboxNode || {};
+  const lines = [
+    `${displayName(it.name)} 속성`,
+    "",
+    "종류: 툴박스 항목(외부 링크)",
+    `주소: ${node.url || ""}`
+  ];
+  await showInfoDialog(lines.join("\n"));
+}
+function buildToolboxItemMenuItems(it) {
+  const node = it.toolboxNode || {};
+  const url = node.url || "";
+  return [
+    { label: "열기", action: () => activateExternalItem(node) },
+    { label: "새 탭에서 열기", action: () => activateExternalItem(node, "tab") },
+    { label: "다운로드", action: () => activateExternalItem(node, "tab") },
+    { label: "주소 복사", action: () => dfCopyToolboxUrl(url) },
+    { label: "속성", action: () => showToolboxItemProperties(it) }
+  ];
+}
 function buildFileMenuItems(it) {
   // 요청 #113: 휴지통 안의 항목(파일/폴더 모두)은 CRUD 메뉴 대신 복원/영구 삭제 두 개만 제공한다
   // (실제 윈도우 휴지통과 동일 - 이름 변경/새 폴더/복사 등은 휴지통 안에서는 의미가 없음).
   if (isRecycleBinPath(it.path)) return dfsRecycleBinItemMenuItems(it);
+  // 요청: 툴박스 항목은 폴더도 휴지통도 아니고, 아래의 실제 저장소 파일 메뉴와도 다르다(외부
+  // 주소로 가는 바로가기일 뿐) - dfsNode 검사(바로 아래)와 나란히 가장 먼저 갈라낸다.
+  if (it.toolboxNode) return buildToolboxItemMenuItems(it);
   if (it.type === "folder") {
     // 바탕화면(가상 파일시스템) 안의 폴더는 실제 저장소 폴더와 달리 쓰기가 가능하므로, 진짜
     // 탐색기와 하나로 통합된 지금은 여기서도 새 폴더/이름변경/삭제 등 CRUD 메뉴를 그대로 제공한다.

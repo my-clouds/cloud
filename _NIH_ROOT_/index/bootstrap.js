@@ -164,6 +164,10 @@ async function main() {
     // 요청 #143: 확장자별 더블클릭 개별 설정(extension_run_set.json) 반영 - keyboard-and-activate.js의
     // activate()가 extensionRunActionFor()로 이 설정을 참조한다.
     applyExtensionRunSetConfig(cfg.extRun);
+    // 툴박스(toolbox_set.json) 반영 - dirCache에도 동기적으로 채워 넣어야 트리를 동기적으로 읽는
+    // buildTreeDom/flattenVisibleTree가 아래 renderNavPane()부터 곧바로 정확하게 그려진다.
+    applyToolboxConfig(cfg.toolbox);
+    loadToolboxDir([TOOLBOX_TREE_NAME]);
     // 커스텀 아이콘 설정이 이 시점(비동기)에야 도착하므로, 이미 그려져 있던 타이틀바 아이콘도
     // 다시 계산해야 한다(부팅 직후엔 아직 customIconConfig가 비어 있어 기본 아이콘으로 그려졌었음).
     updateWinTitlebarIcon();
