@@ -470,6 +470,14 @@ document.addEventListener("dragstart", (e) => {
   if (e.target && e.target.closest && e.target.closest('[draggable="true"]')) return;
   e.preventDefault();
 }, true);
+// 실제 윈도우처럼 메뉴 바깥을 "누르는 순간"(mousedown) 바로 닫는다 - 예전엔 click(뗄 때)에서만 닫혀서
+// 버튼을 누르고 있는 동안 메뉴가 그대로 남아 있었다. 메뉴 안을 누른 경우는 그대로 둬야 항목의 click이 실행된다.
+// 캡처 단계라서 다른 mousedown 핸들러가 stopPropagation을 해도 항상 닫힌다.
+document.addEventListener("mousedown", (e) => {
+  if (!activeCtxMenu) return;
+  if (e.target && e.target.closest && e.target.closest(".ctx-menu")) return;
+  closeContextMenu();
+}, true);
 document.addEventListener("click", closeContextMenu);
 document.addEventListener("scroll", closeContextMenu, true);
 
