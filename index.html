@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Repo Index</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+<!-- 가짜 가로 모드: 세로로 고정된 터치 기기에서 화면을 90° 돌려 가로처럼 쓴다. 좌표 API를 감싸야 해서
+     다른 스크립트보다 먼저(여기 head에서) 불러온다. -->
+<script src="_NIH_ROOT_/index/fake-rotate.js"></script>
 <!-- 창 스킨(테마) 스타일시트 - 환경설정에서 즉시 바뀐다(applyTheme, _NIH_ROOT_/index/settings-startmenu.js 참고).
      _NIH_ROOT_ 아래에 있어서 색인 트리에는 안 보이지만 GitHub Pages는 그대로 서빙한다. -->
 <link rel="stylesheet" id="themeLink" href="_NIH_ROOT_/index/ui/theme/win7/style.css">
@@ -106,6 +109,7 @@
 <script src="_NIH_ROOT_/index/editor.js"></script>
 <script src="_NIH_ROOT_/index/menu-maker.js"></script>
 <script src="_NIH_ROOT_/index/hls-player.js"></script>
+<script src="_NIH_ROOT_/index/gamepad.js"></script>
 
 </body>
 </html>

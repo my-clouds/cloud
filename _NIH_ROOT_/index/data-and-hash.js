@@ -267,7 +267,8 @@ function openNavPaneRespectingHash() {
    탐색창을 자동으로 접어 내용을 바로 보여준다. 넓은 화면(항상 옆에 두고 쓰는 형태)에서는 폴더를
    클릭할 때마다 탐색창이 접히면 오히려 불편하므로 이 자동 닫힘을 적용하지 않는다. */
 function closeNavPaneIfNarrow() {
-  if (window.matchMedia("(max-width: 720px)").matches) closeNavPane();
+  // 좁은 화면 여부는 fake-rotate.js가 <html>에 붙이는 .narrow 클래스로 본다(가짜 가로 모드에서는 돌린 뒤의 폭 기준).
+  if (document.documentElement.classList.contains("narrow")) closeNavPane();
 }
 async function resolveInitialPath(pathArr) {
   let p = (pathArr || []).slice();
