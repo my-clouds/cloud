@@ -129,8 +129,24 @@ function buildGrid(items, opts) {
     // 요청 #141: .sc 바로가기 파일은 실제 윈도우가 .lnk 확장자를 숨기는 것처럼 목록에는 확장자를 뺀
     // 이름으로 보여준다(실제 파일명 자체는 그대로라서 다운로드/속성 등은 전혀 영향받지 않는다).
     cell.innerHTML = `<div class="icon">${icon}</div><div class="label">${escapeHtml(displayName(it.name))}</div>${subHtml}`;
-    cell.onclick = () => {
+    cell.onclick = (e) => {
       els.contentPane.focus();
+      if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+        // 버그 리포트: 탐색기 안에서는 Ctrl+클릭 다중 선택이 아예 안 됐다(항상 하나로 좁혀짐) - 바탕화면
+        // 아이콘과 같이 하나씩 누적/해제한다. 이 창의 규칙상 2개 이상일 때만 multiSelected를 쓰고,
+        // 1개면 일반 단일 선택(selected)으로 둔다(드래그 선택이 끝날 때와 같은 규칙).
+        const set = new Set(multiSelected.size > 1 ? multiSelected : (selected ? [selected.path.join("/")] : []));
+        if (set.has(key)) set.delete(key); else set.add(key);
+        if (set.size > 1) { multiSelected = set; selected = null; }
+        else {
+          multiSelected.clear();
+          const one = set.size ? currentItems.find(i => i.path.join("/") === [...set][0]) : null;
+          selected = one ? { path: one.path, name: one.name, type: one.type } : null;
+        }
+        paintContentPane();
+        updateStatus();
+        return;
+      }
       multiSelected.clear();
       selected = { path: it.path, name: it.name, type: it.type };
       paintContentPane();

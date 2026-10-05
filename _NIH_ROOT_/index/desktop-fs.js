@@ -1193,8 +1193,17 @@ function dfsRenderSpecialIcon(id, x, y, iconHtml, label, onDblClick, buildMenu) 
     // 세워두는 dfsSuppressNextDesktopClick으로 이 한 번의 click만 무시한다.
     if (dfsSuppressNextDesktopClick) { dfsSuppressNextDesktopClick = false; els.dfIconLayer.focus(); return; }
     els.dfIconLayer.focus();
-    dfsMultiSelected.clear();
-    dfsSelectedIconId = id;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      // 버그 리포트: 드라이브(저장소 루트)/휴지통은 Ctrl+클릭으로 파일과 같이 선택되지 않았다 - 일반
+      // 아이콘의 click 핸들러와 똑같이 누적/해제한다(러버밴드 선택은 원래도 이 둘을 같이 담는다).
+      if (dfsSelectedIconId !== null) { dfsMultiSelected.add(dfsSelectedIconId); dfsSelectedIconId = null; }
+      if (dfsMultiSelected.has(id)) dfsMultiSelected.delete(id);
+      else dfsMultiSelected.add(id);
+      dfsLastSelectionOrigin = "click";
+    } else {
+      dfsMultiSelected.clear();
+      dfsSelectedIconId = id;
+    }
     dfsRenderDesktop();
   });
   icon.addEventListener("dblclick", () => onDblClick());
