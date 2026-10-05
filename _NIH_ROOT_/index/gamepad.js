@@ -25,7 +25,7 @@
 ================================================================================= */
 (function () {
   "use strict";
-  if (!navigator.getGamepads) return;
+  const HAS_PAD = !!navigator.getGamepads;
 
   const DEAD = 0.2;          // 스틱 데드존
   const CUR_SPEED = 1150;    // 커서 최고 속도(px/초)
@@ -44,7 +44,7 @@
   let rangeEl = null;
   let dragSrc = null, dragTried = false, dragging = false, dragDt = null, dragOver = null, dragOk = false;
   let repKey = null, repAt = 0;
-  let lastEditable = null;
+  let realMove = 0;
 
   /* ---------------- 화면 요소 ---------------- */
   const CURSOR_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -55,6 +55,8 @@
     '#gpCursor { position: fixed; left: -3px; top: -2px; width: 28px; height: 30px; z-index: 2147483647; pointer-events: none; display: none;' +
     ' background: url("' + CURSOR_SVG + '") no-repeat; filter: drop-shadow(1px 1.5px 1.5px rgba(0,0,0,.5)); }\n' +
     '#gpCursor.on { display: block; }\n' +
+    // 패드로 조작하는 동안에는 진짜 마우스 커서를 숨긴다(마우스가 연결돼 있어도 커서는 하나만 보인다).
+    'html.gp-active, html.gp-active * { cursor: none !important; }\n' +
     '#gpCursor.drag { filter: drop-shadow(0 0 5px #3a8fe0); opacity: .8; }\n' +
     '.gp-tray { display: none; align-items: center; padding: 0 6px; font-size: 15px; cursor: var(--cur-link, pointer); }\n' +
     '.gp-tray.on { display: flex; }\n' +
@@ -107,7 +109,7 @@
       ["A", "클릭 · 누른 채 이동하면 드래그 · 빠르게 두 번 = 더블클릭(열기)"],
       ["X", "우클릭 메뉴"],
       ["B", "취소 / 닫기 (Esc)"],
-      ["Y", "화면 키보드 열기 / 닫기"],
+      ["Y", "화면 키보드 열기 / 닫기 (입력창에 있을 때)"],
       ["십자키", "방향키 (선택 이동, 메뉴 이동)"],
       ["LB / RB", "뒤로 / 앞으로"],
       ["RT", "Enter"],
@@ -166,17 +168,27 @@
     if (cx < 0) { cx = window.innerWidth / 2; cy = window.innerHeight / 2; }
     placeCursor();
     cursorEl.classList.add("on");
+    document.documentElement.classList.add("gp-active");
+    realMove = 0;
+    if (isTextField(document.activeElement)) oskOpen();
   }
   function deactivate() {
     if (!active) return;
     if (held) releaseA();
     active = false;
     cursorEl.classList.remove("on");
+    document.documentElement.classList.remove("gp-active");
     document.querySelectorAll(".gp-key.hot").forEach((k) => k.classList.remove("hot"));
     hoverEl = null;
   }
   // 진짜 마우스나 터치를 쓰기 시작하면 가짜 커서를 치운다(우리가 만든 이벤트는 isTrusted가 false다).
-  window.addEventListener("mousemove", (e) => { if (e.isTrusted) deactivate(); }, true);
+  // 마우스는 살짝 건드린 정도(떨림)로는 넘어가지 않고, 확실히 움직이거나 눌렀을 때만 넘어간다.
+  window.addEventListener("mousemove", (e) => {
+    if (!e.isTrusted || !active) return;
+    realMove += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
+    if (realMove > 30) deactivate();
+  }, true);
+  window.addEventListener("mousedown", (e) => { if (e.isTrusted) deactivate(); }, true);
   window.addEventListener("touchstart", (e) => { if (e.isTrusted) deactivate(); }, true);
 
   function isTextField(el) {
@@ -235,14 +247,14 @@
     if (!ct) return;
     const media = ct.closest && ct.closest("video, audio");
     const sel = ct.closest && ct.closest("select");
-    const field = ct.closest && ct.closest("input, textarea");
     fire("click", ct, { detail: 1 });
     if (media) { if (media.paused) { const p = media.play(); if (p && p.catch) p.catch(() => {}); } else media.pause(); }
     if (sel && !sel.disabled) openSelect(sel);
-    else if (isTextField(field) && document.activeElement === field) oskOpen();
     const now = performance.now();
     if (now - lastClickT < DBL_MS && Math.hypot(cx - lastClickX, cy - lastClickY) < DBL_PX) {
-      if (ct.isConnected) fire("dblclick", ct, { detail: 2 });
+      // 탐색기 목록은 클릭할 때마다 항목을 새로 그려서 방금 누른 요소가 이미 화면에서 빠져 있을 수 있다 -
+      // 그래도 그 요소에 걸린 더블클릭 동작은 그대로 실행돼야 하므로 연결 여부를 따지지 않고 보낸다.
+      fire("dblclick", ct, { detail: 2 });
       lastClickT = 0;
     } else { lastClickT = now; lastClickX = cx; lastClickY = cy; }
   }
@@ -376,6 +388,7 @@
   const JCOMB = { "ㄱㅅ": "ㄳ", "ㄴㅈ": "ㄵ", "ㄴㅎ": "ㄶ", "ㄹㄱ": "ㄺ", "ㄹㅁ": "ㄻ", "ㄹㅂ": "ㄼ", "ㄹㅅ": "ㄽ", "ㄹㅌ": "ㄾ", "ㄹㅍ": "ㄿ", "ㄹㅎ": "ㅀ", "ㅂㅅ": "ㅄ" };
 
   let oskOn = false, oskLang = "en", oskShift = false, oskSym = false;
+  let hUndo = null; // 받침이 다음 글자 첫소리로 넘어갔을 때(난 + ㅜ = 나누) 지우면 되돌리기 위한 기억(나누 - ㅜ = 난)
   let H = { cho: "", jung: [], jong: [] }, composing = false; // 지금 조합 중인 한글 한 글자(입력창의 커서 바로 앞 글자)
   const oskEl = document.createElement("div");
   oskEl.id = "gpOsk";
@@ -406,6 +419,7 @@
       if (ch) b.dataset.ch = ch;
       row.appendChild(b);
     };
+    oskPreview();
     rows.forEach((line) => { const r = addRow(); Array.from(line).forEach((ch) => addKey(r, ch, "", ch)); });
     const r = addRow();
     addKey(r, "Shift", "shift", "", "wide" + (oskShift ? " lock" : ""));
@@ -436,6 +450,59 @@
     pv.textContent = txt;
     pv.classList.toggle("none", !el);
   }
+  /* 화면 키보드는 글자 입력창에 포커스가 있는 동안에만 떠 있고, 입력창을 벗어나면 바로 닫힌다.
+     설정 "가상 키보드 기본 사용"(기본 켬): 키보드/패드/터치 무엇을 쓰든 입력창을 누르면 이 키보드가 뜨고,
+     기기 자체의 화면 키보드는 inputmode="none"으로 막는다. 끄면 막지 않고, 패드로 조작할 때만 뜬다. */
+  const LS_OSK = "nih:osk";
+  function oskDefault() { try { return localStorage.getItem(LS_OSK) !== "off"; } catch (e) { return true; } }
+  function fieldOf(t) {
+    const f = t && t.closest ? t.closest("input, textarea, [contenteditable]") : null;
+    return isTextField(f) ? f : null;
+  }
+  function guardField(el) {
+    if (oskDefault()) {
+      if (el.getAttribute("inputmode") !== "none") {
+        el.dataset.gpIm = el.getAttribute("inputmode") || "";
+        el.setAttribute("inputmode", "none");
+      }
+    } else if (el.dataset.gpIm !== undefined) {
+      if (el.dataset.gpIm) el.setAttribute("inputmode", el.dataset.gpIm); else el.removeAttribute("inputmode");
+      delete el.dataset.gpIm;
+    }
+  }
+  // 포커스가 가기 전에(누르는 순간) 먼저 막아야 기기 키보드가 올라오지 않는다.
+  ["touchstart", "mousedown"].forEach((type) => {
+    document.addEventListener(type, (e) => { const f = fieldOf(e.target); if (f) guardField(f); }, true);
+  });
+  document.addEventListener("focusin", (e) => {
+    const f = fieldOf(e.target);
+    if (!f) return;
+    guardField(f);
+    oskCommit();
+    if (oskDefault() || active) oskOpen();
+  }, true);
+  document.addEventListener("focusout", (e) => {
+    if (fieldOf(e.relatedTarget)) oskCommit(); else oskClose();
+  }, true);
+  // 닫아둔 뒤 같은 입력창을 다시 누르면(포커스는 그대로라 focusin이 안 온다) 다시 띄운다.
+  document.addEventListener("click", (e) => {
+    const f = fieldOf(e.target);
+    if (f && document.activeElement === f && (oskDefault() || active)) oskOpen();
+    if (oskOn) oskPreview();
+  }, true);
+  document.addEventListener("input", () => { if (oskOn) oskPreview(); }, true);
+  document.addEventListener("keyup", () => { if (oskOn) oskPreview(); }, true);
+  // 진짜 키보드로 치기 시작하면 조합 중이던 한글 상태는 버린다(글자는 그대로 남는다).
+  document.addEventListener("keydown", (e) => { if (e.isTrusted) oskCommit(); }, true);
+  window.GpOsk = {
+    enabled: oskDefault,
+    setEnabled(on) {
+      try { if (on) localStorage.removeItem(LS_OSK); else localStorage.setItem(LS_OSK, "off"); } catch (e) {}
+      const f = fieldOf(document.activeElement);
+      if (f) guardField(f);
+      if (f && (on || active)) oskOpen(); else oskClose();
+    }
+  };
   function oskOpen() {
     if (oskOn) return;
     oskOn = true; oskShift = false;
@@ -448,7 +515,7 @@
     oskOn = false;
     oskEl.classList.remove("on");
   }
-  function oskCommit() { H = { cho: "", jung: [], jong: [] }; composing = false; }
+  function oskCommit() { H = { cho: "", jung: [], jong: [] }; composing = false; hUndo = null; }
   function oskTarget() {
     const a = document.activeElement;
     return isTextField(a) ? a : null;
@@ -460,7 +527,7 @@
     return H.cho || jung;
   }
   function hPut(el, replace) { insertText(el, hCompose(), replace ? 1 : 0); composing = true; }
-  function hNew(el, st) { H = Object.assign({ cho: "", jung: [], jong: [] }, st); hPut(el, false); }
+  function hNew(el, st) { hUndo = null; H = Object.assign({ cho: "", jung: [], jong: [] }, st); hPut(el, false); }
   function hType(el, ch) {
     if (JUNG.indexOf(ch) < 0) { // 자음
       if (H.cho && H.jung.length && !H.jong.length && JONG.indexOf(ch) > 0) { H.jong = [ch]; hPut(el, composing); }
@@ -471,7 +538,9 @@
       if (H.jong.length) { // 받침이 다음 글자의 첫소리로 넘어간다 (간 + ㅏ -> 가나)
         const c = H.jong.pop();
         hPut(el, composing);
+        const before = { cho: H.cho, jung: H.jung.slice(), jong: H.jong.slice() };
         hNew(el, { cho: c, jung: [ch] });
+        hUndo = { st: before, c: c };
       }
       else if (H.jung.length === 1 && VCOMB[H.jung[0] + ch]) { H.jung.push(ch); hPut(el, composing); }
       else if (H.cho && !H.jung.length) { H.jung = [ch]; hPut(el, composing); }
@@ -481,7 +550,17 @@
   }
   function hBack(el) {
     if (H.jong.length) H.jong.pop();
-    else if (H.jung.length) H.jung.pop();
+    else if (H.jung.length) {
+      H.jung.pop();
+      if (!H.jung.length && hUndo && hUndo.c === H.cho) { // 넘어왔던 첫소리를 앞 글자의 받침으로 되돌린다
+        const u = hUndo;
+        deleteBack(el);
+        H = u.st; H.jong.push(u.c);
+        hUndo = null;
+        hPut(el, true);
+        return;
+      }
+    }
     else H.cho = "";
     if (hCompose()) hPut(el, true);
     else { deleteBack(el); oskCommit(); }
@@ -493,8 +572,8 @@
   }
   function oskPress(act, ch) {
     const el = oskTarget();
+    if (act !== "close" && !el) return;
     if (act === "char") {
-      if (!el) return;
       if (CHO.indexOf(ch) >= 0 || JUNG.indexOf(ch) >= 0) hType(el, ch);
       else { oskCommit(); insertText(el, ch, 0); }
       el.dispatchEvent(new KeyboardEvent("keyup", { key: ch, bubbles: true }));
@@ -511,6 +590,7 @@
     else if (act === "lang") { oskLang = oskLang === "ko" ? "en" : "ko"; oskSym = false; oskRender(); }
     else if (act === "sym") { oskSym = !oskSym; oskRender(); }
     else if (act === "close") oskClose();
+    if (oskOn) oskPreview();
   }
   // 십자키로 키 사이를 옮겨 다닌다 - 지금 커서에서 그 방향으로 가장 가까운 키의 가운데로 커서를 보낸다.
   function oskStep(dx, dy) {
@@ -570,7 +650,7 @@
         else if (document.getElementById("startMenu") && document.getElementById("startMenu").classList.contains("open")) document.getElementById("startMenu").classList.remove("open");
         else sendKey("Escape");
         break;
-      case BTN.Y: if (oskOn) oskClose(); else oskOpen(); break;
+      case BTN.Y: if (oskOn) oskClose(); else if (fieldOf(document.activeElement)) oskOpen(); break;
       case BTN.LB: if (oskOn) oskPress("lang"); else sendKey("ArrowLeft", { altKey: true }); break;
       case BTN.RB: if (oskOn) oskPress("shift"); else sendKey("ArrowRight", { altKey: true }); break;
       case BTN.RT: oskCommit(); sendKey("Enter"); break;
@@ -589,7 +669,7 @@
     raf = requestAnimationFrame(loop);
     const dt = Math.min(0.05, (t - lastT) / 1000) || 0;
     lastT = t;
-    const pads = navigator.getGamepads();
+    const pads = HAS_PAD ? navigator.getGamepads() : [];
     let gp = padIndex != null ? pads[padIndex] : null;
     if (!gp || !gp.connected) {
       gp = null;
@@ -608,6 +688,7 @@
     }
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, sx = gp.axes[2] || 0, sy = gp.axes[3] || 0;
     const m = Math.hypot(ax, ay), sm = Math.hypot(sx, sy);
+    if (any || m > DEAD || sm > DEAD) realMove = 0;
     if (!active) {
       // 다른 입력(마우스/터치)을 쓰다가 패드로 돌아온 첫 입력은 커서를 다시 보여주는 데만 쓴다.
       if (any || m > DEAD || sm > DEAD) { activate(); prev = now; }
@@ -654,13 +735,6 @@
       }
     }
 
-    // 패드로 쓰는 중에 입력창에 포커스가 생기면(이름 바꾸기 창 등) 화면 키보드를 바로 띄운다.
-    const a = document.activeElement, ed = isTextField(a) ? a : null;
-    if (ed !== lastEditable) {
-      oskCommit();
-      lastEditable = ed;
-      if (ed) oskOpen();
-    }
     if (oskOn) oskPreview();
   }
 
@@ -669,6 +743,7 @@
     return ((gp && gp.id) || "").replace(/\s*\((?:STANDARD GAMEPAD\s*)?Vendor:.*\)\s*$/i, "").trim() || "게임패드";
   }
   function anyPad() {
+    if (!HAS_PAD) return null;
     const pads = navigator.getGamepads();
     for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i].connected) return pads[i];
     return null;
@@ -683,13 +758,12 @@
   window.addEventListener("gamepadconnected", (e) => {
     const first = !trayEl.classList.contains("on");
     start();
-    lastEditable = isTextField(document.activeElement) ? document.activeElement : null;
     if (first) toast("🎮 게임패드가 연결되었습니다\n" + padName(e.gamepad) + "\nBack(Select) 버튼을 누르면 조작 안내가 나옵니다.", { sticky: true });
   });
   window.addEventListener("gamepaddisconnected", () => {
     if (anyPad()) return;
     deactivate();
-    oskClose();
+    if (!oskDefault()) oskClose();
     toggleHelp(false);
     trayEl.classList.remove("on");
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
