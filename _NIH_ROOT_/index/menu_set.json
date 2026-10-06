@@ -20,15 +20,20 @@
           "popup": true,
           "width": 900,
           "height": 640
+        },
+        {
+          "name": "URL-Locker.html",
+          "url": "_NIH_ROOT_/tools/URL-Locker.html#lock=1",
+          "icon": ""
         }
       ]
     }
   ],
   "tray": [
     {
-      "name": "새 항목",
+      "name": "AutoHotkey",
       "url": "https://www.autohotkey.com/download/ahk-v2.exe",
-      "icon": "/_NIH_ROOT_/index/ui/icon/menu/traybar/autohotkey.svg"
+      "icon": "_NIH_ROOT_/index/ui/icon/menu/traybar/autohotkey.svg"
     }
   ]
 }
