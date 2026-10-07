@@ -35,6 +35,13 @@
 ; "OK"가 아니라 이 헬퍼만의 고유 서명(HELPER_SIGNATURE)을 응답한다 -
 ; index.html은 정확히 그 문자열이 와야만 "찾았다"고 판단한다.
 ;
+; 보안: /ping 을 뺀 모든 요청은 "허용된 출처(Origin)"에서 온 것만 처리한다.
+; 처음 보는 출처면 "이 사이트를 허용할까요?" 창을 한 번 띄우고, [예]를 누른 출처만
+; allowed_origins.txt 에 저장한다(다음부터는 묻지 않음). Origin 헤더가 없는 요청
+; (다른 사이트의 <img> 태그 등)과 허용되지 않은 출처는 403으로 거부한다.
+; CORS 응답 헤더도 "*" 대신 허용된 그 출처만 돌려준다. 허용을 취소하려면
+; allowed_origins.txt 에서 해당 줄을 지우고 헬퍼를 다시 띄우면 된다.
+;
 ; 참고: HTTPS 페이지에서 http://127.0.0.1로 요청하는 건 크롬의
 ; "Local Network Access" 정책 때문에 처음 한 번은 브라우저 권한
 ; 팝업이 뜬다. 그건 정상이고, 사용자가 허용을 눌러야 동작한다.
@@ -64,7 +71,9 @@ If((FullPath:=(Path:=SystemDrive "\mickey90427\localserver\")"localserver.ahk")!
 	FileCopy % A_AhkPath,% Path,1
 	RegWrite REG_SZ,HKEY_CLASSES_ROOT\localserver,URL Protocol
 	RegWrite REG_EXPAND_SZ,HKEY_CLASSES_ROOT\localserver\shell\open\command,,% """%SystemDrive%\mickey90427\localserver\"RegExReplace(A_AhkPath,"^.+[\\/](.*)$","$1")""" ""%SystemDrive%\mickey90427\localserver\localserver.ahk"""
-	Run % FullPath,% Path,UseErrorLevel
+	; 여기는 관리자 권한이라 그냥 Run 하면 서버도 관리자 권한으로 뜬다. 방금 등록한
+	; localserver: 프로토콜을 탐색기에 넘겨서(탐색기가 대신 실행) 일반 권한으로 띄운다.
+	Run explorer.exe localserver:,,UseErrorLevel
 	ExitApp
 }
 Else if(!FileExist(exe:=RegExReplace(A_AhkPath,"^.+[\\/](.*)$","$1")))
@@ -77,7 +86,9 @@ If(command!="""%SystemDrive%\mickey90427\localserver\"RegExReplace(A_AhkPath,"^.
 	IfEqual A_IsAdmin,0,ExitApp
 	RegWrite REG_SZ,HKEY_CLASSES_ROOT\localserver,URL Protocol
 	RegWrite REG_EXPAND_SZ,HKEY_CLASSES_ROOT\localserver\shell\open\command,,% """%SystemDrive%\mickey90427\localserver\"exe """ ""%SystemDrive%\mickey90427\localserver\localserver.ahk"""
-    Reload
+	; Reload 하면 관리자 권한 그대로 서버가 뜨므로, 위와 같이 일반 권한으로 다시 띄운다.
+	Run explorer.exe localserver:,,UseErrorLevel
+	ExitApp
 }
 
 PORT_MIN := 8000
@@ -96,6 +107,18 @@ CustomDownloadThresholdBytes := 50 * 1024 * 1024
 ProcCheckIntervalMs := 200
 ; 프로세스가 끝난 걸 확인한 뒤 temp 파일 삭제를 몇 번까지 재시도할지. 필요하면 이 값만 바꾸면 됨.
 ProcDeleteMaxRetries := 30
+
+; 허용된 출처 목록(한 줄에 하나). 헬퍼가 직접 관리한다 - 위 "보안" 설명 참고.
+WHAllowFile := A_ScriptDir . "\allowed_origins.txt"
+WHAllowed := {}       ; {출처: 1}
+WHOrigins := {}       ; {클라이언트 소켓: 응답에 넣을 Access-Control-Allow-Origin 값}
+WHAsking := false     ; 허용 여부를 묻는 창이 이미 떠 있는지
+Loop, Read, %WHAllowFile%
+{
+    allowedLine := Trim(A_LoopReadLine)
+    if (allowedLine != "")
+        WHAllowed[allowedLine] := 1
+}
 
 RunningProcs := []   ; [{pid, path}, ...] "열기"로 실행해서 temp에 남아있는 파일들 추적
 UniqueCounter := 0
@@ -140,17 +163,17 @@ StartWebhookServer(portMin, portMax, logFile := "webhook.log") {
 
 ; ===================== 소켓 이벤트 =====================
 WHSocketEvent(wParam, lParam) {
-    global WHSock, WM_WH
+    global WHSock, WM_WH, WHOrigins
     Event := lParam & 0xFFFF
 
     if (wParam = WHSock && Event = 8)
         Client := DllCall("Ws2_32\accept", "Ptr", WHSock, "Ptr", 0, "Ptr", 0, "Ptr"), Client != -1 && DllCall("Ws2_32\WSAAsyncSelect", "Ptr", Client, "Ptr", A_ScriptHwnd, "UInt", WM_WH, "Int", 0x21)
 
     if (Event = 1)
-        WHHandleRequest(wParam), DllCall("Ws2_32\closesocket", "Ptr", wParam)
+        WHHandleRequest(wParam), DllCall("Ws2_32\closesocket", "Ptr", wParam), WHOrigins.Delete(wParam)
 
     if (Event = 0x20)
-        DllCall("Ws2_32\closesocket", "Ptr", wParam)
+        DllCall("Ws2_32\closesocket", "Ptr", wParam), WHOrigins.Delete(wParam)
 }
 
 ; ===================== 요청 처리 (라우팅 + 로그) =====================
@@ -161,7 +184,7 @@ WHSocketEvent(wParam, lParam) {
 ; 폴링하며 마저 받는다(최대 4MB, 그래도 못 채우면 에러). 본문은 문자열로 바꾸지 않고
 ; 받은 그대로 바이트 버퍼에 들고 있다가 파일로 그대로 흘려보낸다(불필요한 인코딩 왕복 없음).
 WHHandleRequest(Client) {
-    global WHLog, HELPER_SIGNATURE
+    global WHLog, HELPER_SIGNATURE, WHOrigins
     bufCap := 4194304  ; 4MB 상한 (개인용 로컬 헬퍼 - 실용적인 선에서 타협, 완전한 스트리밍 재조립은 하지 않음)
     VarSetCapacity(buf, bufCap, 0)
     total := DllCall("Ws2_32\recv", "Ptr", Client, "Ptr", &buf, "Int", bufCap, "Int", 0)
@@ -180,6 +203,11 @@ WHHandleRequest(Client) {
         return WHSend(Client, 400, "Bad Request")
 
     method := m1, reqPath := m2
+
+    ; 요청을 보낸 페이지의 출처. 브라우저가 붙이는 값이라 웹페이지가 속일 수 없다.
+    reqOrigin := ""
+    if RegExMatch(SubStr(headerStr, 1, headerEndPos), "im)^Origin:[ \t]*(\S+)", om)
+        reqOrigin := om1
 
     contentLength := 0
     if RegExMatch(headerStr, "im)^Content-Length:\s*(\d+)", clm)
@@ -260,14 +288,25 @@ WHHandleRequest(Client) {
     FormatTime, ts,, yyyy-MM-dd HH:mm:ss
     FileAppend, % ts . "  " . method . " " . reqPath . "`n", %WHLog%, UTF-8
 
+    ; /ping 은 서명 문자열만 돌려주는 무해한 요청이라 누구에게나 응답한다
+    ; (index.html이 포트를 스캔해서 헬퍼를 찾는 데 필요).
+    if (routePath = "/ping") {
+        WHOrigins[Client] := "*"
+        WHSend(Client, 200, (method = "OPTIONS") ? "" : HELPER_SIGNATURE)
+        return
+    }
+
+    ; 그 밖의 모든 요청(사전 확인 OPTIONS 포함)은 허용된 출처에서 온 것만 처리한다.
+    if !WHCheckOrigin(reqOrigin)
+        return WHSend(Client, 403, "허용되지 않은 출처입니다")
+    WHOrigins[Client] := reqOrigin
+
     if (method = "OPTIONS") {
         WHSend(Client, 200, "")
         return
     }
 
-    if (routePath = "/ping") {
-        WHSend(Client, 200, HELPER_SIGNATURE)
-    } else if (routePath = "/open") {
+    if (routePath = "/open") {
         HandleOpen(Client, fileUrl, sizeParam)
     } else if (routePath = "/download") {
         HandleDownload(Client, fileUrl, sizeParam)
@@ -288,6 +327,39 @@ WHHandleRequest(Client) {
     } else {
         WHSend(Client, 404, "Not Found")
     }
+}
+
+; ===================== 출처 검사: 허용 목록에 있으면 통과, 처음 보는 출처면 한 번 물어본다 =====================
+WHCheckOrigin(origin) {
+    global WHAllowed, WHAllowFile, WHAsking
+    ; Origin 헤더가 없거나(다른 사이트의 <img>/<form> 등) "null"(file:// 로 연 페이지 등)이면 거부
+    if (origin = "" || origin = "null")
+        return false
+    if WHAllowed.HasKey(origin)
+        return true
+    if !RegExMatch(origin, "i)^https?://[a-z0-9.\-]+(:\d+)?$")
+        return false
+    ; 창이 떠 있는 동안 들어온 다른 요청은 창을 또 띄우지 않고 그냥 거부한다
+    if (WHAsking)
+        return false
+
+    WHAsking := true
+    allow := false
+    msg := "다음 웹사이트가 로컬 헬퍼를 사용하려고 합니다.`n`n" . origin
+        . "`n`n허용하면 이 사이트가 이 PC에 파일을 내려받고 실행할 수 있습니다."
+        . "`n직접 연 본인의 클라우드 페이지가 맞을 때만 [예]를 누르세요."
+    ; 4=예/아니오, 48=경고 아이콘, 256=기본 버튼 [아니오], 262144=항상 위
+    MsgBox, 262452, 로컬 헬퍼 - 사이트 허용, % msg
+    IfMsgBox, Yes
+        allow := true
+    WHAsking := false
+
+    if !allow
+        return false
+    WHAllowed[origin] := 1
+    ; 인코딩을 지정하지 않는다(BOM이 붙으면 첫 줄이 목록과 안 맞게 된다). 출처는 아스키뿐이다.
+    FileAppend, % origin . "`n", %WHAllowFile%
+    return true
 }
 
 ; ===================== 종료: #NoTrayIcon이라 트레이 메뉴로 못 끄니, index.html 환경설정의
@@ -654,10 +726,14 @@ UrlDecode(str) {
 
 ; ===================== 응답 전송 (CORS 헤더 포함) =====================
 WHSend(Client, status, text) {
-    statusText := (status = 200) ? "OK" : (status = 400) ? "Bad Request" : (status = 404) ? "Not Found" : (status = 502) ? "Bad Gateway" : (status = 503) ? "Service Unavailable" : "Error"
+    global WHOrigins
+    ; 허용된 출처(또는 /ping 의 "*")일 때만 CORS 허용 헤더를 붙인다. 없으면 브라우저가 응답을 막는다.
+    acao := WHOrigins[Client]
+    corsLine := (acao != "") ? "Access-Control-Allow-Origin: " . acao . "`r`nVary: Origin`r`n" : ""
+    statusText := (status = 200) ? "OK" : (status = 400) ? "Bad Request" : (status = 403) ? "Forbidden" : (status = 404) ? "Not Found" : (status = 502) ? "Bad Gateway" : (status = 503) ? "Service Unavailable" : "Error"
     VarSetCapacity(bodyBuf, StrPut(text, "UTF-8"), 0), bodyLen := StrPut(text, &bodyBuf, "UTF-8") - 1
     header := "HTTP/1.1 " . status . " " . statusText . "`r`n"
-        . "Access-Control-Allow-Origin: *`r`n"
+        . corsLine
         . "Access-Control-Allow-Methods: GET, POST, OPTIONS`r`n"
         . "Content-Type: text/plain; charset=utf-8`r`n"
         . "Content-Length: " . bodyLen . "`r`n"
